@@ -1,0 +1,84 @@
+---
+title: "An investigation into the variables that relate to the birth weight of a baby"
+author: "Shawn Jiang"
+date: "2024-08-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Introduction
+
+This is my first R Markdown report and I wish to use it to practice and showcase my current abilities in R and knowledge in statistics as well. In this report, we shall be focusing on a data set where the observations are babies born in San Francisco between 1960 and 1967. For each observation, we are given the values of certain variables such as the birth weight of the baby, the age of the mother, the gestational length, whether the mother smoked and others as well. From a scientific standpoint, there are logical reasons as to why the variables of gestational length, age of the mother, and whether the mother smoked would have an effect on the birth weight of their baby. The contribution of gestational length is quite obvious as the entirety of the development of the baby before they were born occurred inside the mother's womb and thus a baby who has spent a longer duration of time inside the womb would have increased positive contribution to their birth weight from gestational length as opposed to a baby who has spent less time in the womb. The case of the mother's age is more complicated but according to the science, for much of the age range (under 35) the correlation between birth weight and the mother's age is positive. The explanation is that if we consider teenagers for example, the bodies of teenagers themselves are still in development and thus this may make them ill-equipped to provide optimal support for a developing fetus. Lastly, the relationship between smoking and birth weight is also rather conclusive. Nicotine has been known to constrict blood vessels reducing the flow of blood and as expected, this phenomenon also appears in the blood vessels of the umbilical cord and the womb. Thus, the amount of nutrients the fetus is able to receive from a mother who actively smokes during pregnancy is comparatively less than a mother that doesn't smoke resulting in the aforementioned relationship.
+
+# Exploratory Data Analysis
+
+Exploratory data analysis is a methodology used by data scientists to quickly glean protruding characteristics about a data set. Through the use of visualizations methods, we are often able to see any immediately noticeable potential relationship between variables in the data set. In our case, we would like to see some sort of confirmation of the relationships we have already established above. The pairs() function displays for us a grid of possible scatterplots for every possible pair of variables.
+
+```{r message=FALSE, warning=FALSE}
+library(openintro)
+library(tidyverse)
+library(modelr)
+library(plotly)
+library(broom)
+babies |> select(-c(case, parity)) |> pairs()
+```
+
+Looking at the output generated, we immediately see that there does seem to be a positive correlation between the variables of birth weight (bwt) and gestation (gestational length). This does confirm our original expectation for these two variables. In addition, shifting our attention to the bwt vs smoke plot, we see that at the extreme ends of the bwt variable (babies with high birth weights), these dots only represent babies whose mothers didn't smoke during their pregnancy which alludes to a negative relationship between smoking and birth weight. Moving on to the plot of bwt vs age, at first, this plot seems to defy our expectations as there doesn't appear to be any correlation between the variables. But we note that there are a tremendous amount of data points present and thus if there is actually a slight correlation between the two variables, then this could possibly be drowned out in the sea of data points being fitted into such a small display area. Furthermore, we have already established before that the correlation between age of the mother and the birth weight of their baby was the least strong at least when compared to the correlation between bwt and age or bwt and smoking.
+
+NOTE: In this particular report, my wish is to be able to demonstrate my ability to generate visualizations in R that can represent intricate models. From the result of executing the pairs function, it seems possible that a correlation exists between the birth weight of the baby and the height of their respective mothers. I will choose to ignore this as I would like our analysis to stick to 3 variables at the very most to allow for ease of visualization and keep the visualization at most in 3 dimensions.
+
+# Modelling
+
+Now it seems apt to determine what kind of model we would like to apply on our data. A linear model assumes linearity in a system of variables. What this essentially means is that the mean of the continuous response variable (the variable that we suspect is dependent on or can be modelled as a function of the predictor or explanatory variables) is a linear combination of the parameters or regression coefficients and the predictor variables. We can gain several pieces of useful information with regards to the general behaviour of the mean of the response variable with respect to any of the predictor variables individually whilst holding the other predictor variables constant. Since in our case, we have a hypothesized continuous response variable and 3 predictor variables, it may be a good idea to employ a linear model as supplemented by the fact that from our previous exploratory data analysis, we were able to see some semblance of a linear relationship between birth weight and gestational length.
+
+```{r message = FALSE, warning = FALSE}
+babies_mod <- lm(data = babies, formula = bwt ~ gestation + age + smoke)
+
+grid <- babies |> 
+  data_grid(gestation = seq_range(gestation, n = 50), 
+            age = seq_range(age, n = 50), 
+            smoke = seq_range(smoke, n = 2))
+
+babies_augmented <- babies_mod |> augment(newdata = grid)
+
+x <- unique(grid$gestation)
+y <- unique(grid$age)
+
+plane_non_smoker <- babies_augmented |> 
+  filter(smoke == 0) |> 
+  pull(.fitted) |> 
+  matrix(nrow = length(x), byrow = TRUE)
+
+plane_smoker <- babies_augmented |> 
+  filter(smoke == 1) |> 
+  pull(.fitted) |> 
+  matrix(nrow = length(x), byrow = TRUE)
+
+color <- matrix(0, nrow = (plane_non_smoker), ncol = ncol(plane_non_smoker))
+
+plot_ly(data = babies, x = ~gestation, y = ~age, z = ~bwt, opacity = 0.6, colors = c("black", "yellow")) |>
+  add_markers(color = ~factor(smoke), text = ~case, marker = list(size = 2)) |>
+  add_surface(
+    x = ~x, y = ~y, z = ~plane_non_smoker, showscale = FALSE,
+    cmin = 0, cmax = 1, cauto = FALSE,
+    surfacecolor = color
+  ) |>
+  add_surface(
+    x = ~x, y= ~y, z = ~plane_smoker, showscale = FALSE,
+    cmin = 0, cmax = 1, cauto = FALSE,
+    surfacecolor = color + 1
+  )
+```
+
+# Conclusions and Discoveries
+
+Before we head into the raw values of parameters, it may be helpful to conduct a preliminary investigation into the general qualitative observations we can glean off of our visualization. We know from our code that the black plane represents the predicted values of the birth weight for babies of mothers who didn't smoke during their duration of pregnancy and the yellow plane represents the predicted values of the birth weight for babies of mothers that did smoke during pregnancy. First of all, we notice that the two planes are more or less parallel. Skipping the mathematical theory, what this means is that smoking itself doesn't actually influence the effect that gestational length and age of the mother have on birth weight. Assuming that the planes are parallel, we further ascertain that the black plane can be reproduced by simply performing a vertical shift upwards of the yellow plane. We can determine this vertical shift value very easily using R and once we do, we would know that in a case where we have two observations in this context that share the same gestational length and age of the mother but differ in terms of whether the mother smoked or not, on average, the baby whose mother didn't smoke would weigh the value of this vertical shift more than their counterpart. In addition, it is immediately conspicuous according to the visualization that a positive correlation exists between birth weight and the age of the mother and through some rotating, we will also find that a positive correlation exists between the birth weight and gestational length which was what we expected. It is also important to note that the extent of the level of "influence" of the change in predictor variables on the mean of the response variable are not directly comparable. This is due to the fact that the units for the slopes of each response and predictor pair is different. So essentially, we can't look at the slope for bwt vs age and notice that it is a lot larger than that of bwt vs gestation and conclude that change in age is more significant than change in gestation in terms of the associated increase in birth weight. We could only do that if the slopes were of the same units.
+
+Now that we have a good idea of what the visualization is trying to communicate from a qualitative standpoint, we must move on to the quantitative.
+
+```{r}
+coef(babies_mod)
+```
+A key aspect of multiple linear regression models is that the sample parameters in front of the predictor variables essentially gives us an approximation of the rate of change of the mean of the response variable with respect to the corresponding predictor variable given that the other predictors are held constant. First and foremost, the units of the x-axis and y-axis are time in days and years respectively. This means that the units for the slopes are ounces/day and ounces/year in the cases of bwt vs gestation and bwt vs age respectively. According to the results of the coef() function, we determine that on average, every increment of the age of the mother is associated with an approximately 0.11 ounce increase in birth weight having controlled for both the gestational length and whether or not the mother smoked. The same interpretation applies for the value under gestation except in this case, it is an approximately 0.45 ounce increase per increment in gestation with the conditions of holding age of the mother and smoking status constant. As previously explained, the value under smoke tells us that on average, for two data points with equal gestation and age but different values for smoking status, the one with the smoking status of 0 will have a birth weight of around 8 ounces higher than their counterpart. It was previously mentioned how because the units of the slopes are different (0.11 ounces/year for bwt vs age and 0.45 ounces/day for bwt vs gestation), the level of significance of each explanatory variable on eliciting increase in birth weight are not directly comparable. However, because day and year are both units of time, we can easily convert one of the values of the slope to allow for matching units. Actually in this case, we know that the multiplication factor to convert ounces/day to ounces/year is 360 days/year which would make the value of 0.45 a lot bigger when 0.45 was already larger than 0.11 anyways. Thus now we can absolutely come to the conclusion that gestation is much more significant than age.
